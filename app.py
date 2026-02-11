@@ -1,7 +1,7 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import linear_kernel
 
 # ------------------------------------------------
@@ -14,24 +14,23 @@ st.set_page_config(
 )
 
 # ------------------------------------------------
-# LOAD FILES (SAFE + CLOUD FRIENDLY)
+# LOAD DATA (NO PICKLE USED)
 # ------------------------------------------------
 @st.cache_resource
 def load_data():
-    df = joblib.load("movies_df.pkl")
-    tfidf_matrix = joblib.load("tfidf_matrix.pkl")
-    indices = joblib.load("indices.pkl")
+    df = pd.read_parquet("movies_df.parquet")
+
+    # Make sure there are no missing overviews
+    df["overview"] = df["overview"].fillna("")
+
+    tfidf = TfidfVectorizer(stop_words="english")
+    tfidf_matrix = tfidf.fit_transform(df["overview"])
+
+    indices = pd.Series(df.index, index=df["title"]).drop_duplicates()
+
     return df, tfidf_matrix, indices
 
 df, tfidf_matrix, indices = load_data()
-
-# ------------------------------------------------
-# UTILITY
-# ------------------------------------------------
-def get_single_index(idx):
-    if isinstance(idx, (list, tuple, np.ndarray, pd.Series)):
-        return int(idx[0])
-    return int(idx)
 
 # ------------------------------------------------
 # RECOMMEND FUNCTION
@@ -40,25 +39,22 @@ def recommend(title, n=10):
     if title not in indices:
         return []
 
-    idx = get_single_index(indices[title])
+    idx = indices[title]
 
-    # compute similarity for one movie only (RAM safe)
-    sim_scores = linear_kernel(
-        tfidf_matrix[idx], tfidf_matrix
-    ).flatten()
+    sim_scores = linear_kernel(tfidf_matrix[idx], tfidf_matrix).flatten()
 
     sorted_idx = np.argsort(sim_scores)[::-1]
     sorted_idx = sorted_idx[sorted_idx != idx]
-    top_idx = sorted_idx[:n]
+    sorted_idx = sorted_idx[:n]
 
-    return df["title"].iloc[top_idx].tolist()
+    return df["title"].iloc[sorted_idx].tolist()
 
 # ------------------------------------------------
 # SIDEBAR
 # ------------------------------------------------
 with st.sidebar:
     st.markdown("## 🎥 Movie Recommender")
-    st.write("Built using NLP & Machine Learning 🚀")
+    st.write("Made using NLP & Machine Learning 🚀")
 
     num_recommendations = st.slider(
         "Number of recommendations",
@@ -68,21 +64,18 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("👨‍💻 **Tech Stack**")
-    st.markdown("- Python")
-    st.markdown("- Scikit-learn")
-    st.markdown("- Streamlit")
+    st.markdown("👨‍💻 Built with: Python, Scikit-Learn, Streamlit")
 
 # ------------------------------------------------
 # MAIN UI
 # ------------------------------------------------
 st.markdown(
-    "<h1 style='text-align:center;'>🎬 Movie Recommendation System</h1>",
+    "<h1 style='text-align: center;'>🎬 Movie Recommendation System</h1>",
     unsafe_allow_html=True
 )
 
 st.markdown(
-    "<p style='text-align:center; font-size:18px;'>"
+    "<p style='text-align: center; font-size:18px;'>"
     "Select a movie and get similar movie recommendations instantly"
     "</p>",
     unsafe_allow_html=True
@@ -90,19 +83,15 @@ st.markdown(
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Movie selection
 col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
     selected_movie = st.selectbox(
         "🎞 Choose a Movie",
-        sorted(df["title"].unique())
+        df["title"].values
     )
 
-    recommend_btn = st.button(
-        "🚀 Get Recommendations",
-        use_container_width=True
-    )
+    recommend_btn = st.button("🚀 Get Recommendations", use_container_width=True)
 
 # ------------------------------------------------
 # RESULTS
@@ -127,7 +116,7 @@ if recommend_btn:
                         border-radius:12px;
                         margin-bottom:15px;
                         text-align:center;
-                        box-shadow:0 4px 8px rgba(0,0,0,0.2);
+                        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
                     ">
                         <h4 style="color:#f9fafb;">🎬</h4>
                         <p style="color:#e5e7eb; font-size:14px;">
